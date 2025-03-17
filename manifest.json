@@ -1,10 +1,13 @@
 {
 	"id": "obsidian-limitless",
 	"name": "Limitless",
-	"version": "1.0.0",
+	"version": "1.1.0",
 	"minAppVersion": "0.15.0",
 	"description": "Syncs with the Limitless API to create daily notes from your lifelogs.",
-	"author": "Your Name",
-	"authorUrl": "https://github.com/yourusername",
-	"isDesktopOnly": false
+	"author": "Alex Skryl",
+	"authorUrl": "https://github.com/skryl",
+	"fundingUrl": "https://www.limitless.app/support",
+	"isDesktopOnly": false,
+	"tags": ["limitless", "lifelog", "daily-notes", "productivity"],
+	"repository": "https://github.com/skryl/obsidian-limitless"
 }
