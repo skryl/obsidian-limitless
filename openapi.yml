@@ -1,0 +1,173 @@
+openapi: 3.0.3
+info:
+  title: Limitless Developer API
+  description: API for accessing lifelogs, providing transparency and portability to user data.
+  version: 1.0.0
+servers:
+  - url: https://api.limitless.ai/
+    description: Production server
+
+tags:
+  - name: Lifelogs
+    description: Operations related to lifelogs data
+
+components:
+  schemas:
+    ContentNode:
+      type: object
+      properties:
+        type:
+          type: string
+          description: Type of content node (e.g., heading1, heading2, heading3, blockquote). More types might be added.
+        content:
+          type: string
+          description: Content of the node.
+        startTime:
+          type: string
+          format: date-time
+          description: ISO format in given timezone.
+        endTime:
+          type: string
+          format: date-time
+          description: ISO format in given timezone.
+        startOffsetMs:
+          type: integer
+          description: Milliseconds after start of this entry.
+        endOffsetMs:
+          type: integer
+          description: Milliseconds after start of this entry.
+        children:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContentNode"
+          description: Child content nodes.
+        speakerName:
+          type: string
+          description: Speaker identifier, present for certain node types (e.g., blockquote).
+          nullable: true
+        speakerIdentifier:
+          type: string
+          description: Speaker identifier, when applicable. Set to "user" when the speaker has been identified as the user.
+          enum: ["user"]
+          nullable: true
+
+    Lifelog:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Unique identifier for the entry.
+        title:
+          type: string
+          description: Title of the entry. Equal to the first heading1 node.
+        markdown:
+          type: string
+          description: Raw markdown content of the entry.
+          nullable: true
+        contents:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContentNode"
+          description: List of ContentNodes.
+
+    MetaLifelogs:
+      type: object
+      properties:
+        nextCursor:
+          type: string
+          description: Cursor for pagination to retrieve the next set of lifelogs.
+          nullable: true
+        count:
+          type: integer
+          description: Number of lifelogs in the current response.
+
+    Meta:
+      type: object
+      properties:
+        lifelogs:
+          $ref: "#/components/schemas/MetaLifelogs"
+
+    LifelogsResponseData:
+      type: object
+      properties:
+        lifelogs:
+          type: array
+          items:
+            $ref: "#/components/schemas/Lifelog"
+
+    LifelogsResponse:
+      type: object
+      properties:
+        data:
+          $ref: "#/components/schemas/LifelogsResponseData"
+        meta:
+          $ref: "#/components/schemas/Meta"
+
+paths:
+  /v1/lifelogs:
+    get:
+      operationId: getLifelogs
+      summary: Returns a list of lifelogs.
+      description: Returns a list of lifelogs based on specified time range or date.
+      tags:
+        - Lifelogs
+      parameters:
+        - in: query
+          name: timezone
+          schema:
+            type: string
+          description: IANA timezone specifier. If missing, UTC is used.
+        - in: query
+          name: date
+          schema:
+            type: string
+            format: date
+          description: Will return all entries beginning on a date in the given timezone (YYYY-MM-DD).
+        - in: query
+          name: start
+          schema:
+            type: string
+            format: date-time
+          description: Start datetime in modified ISO-8601 format (YYYY-MM-DD or YYYY-MM-DD HH:mm:SS). Timezones/offsets will be ignored.
+        - in: query
+          name: end
+          schema:
+            type: string
+            format: date-time
+          description: End datetime in modified ISO-8601 format (YYYY-MM-DD or YYYY-MM-DD HH:mm:SS). Timezones/offsets will be ignored.
+        - in: query
+          name: cursor
+          schema:
+            type: string
+          description: Cursor for pagination to retrieve the next set of entries.
+        - in: query
+          name: direction
+          schema:
+            type: string
+            enum: ["asc", "desc"]
+            default: "desc"
+          description: Sort direction for entries.
+        - in: query
+          name: includeMarkdown
+          schema:
+            type: boolean
+            default: true
+          description: Whether to include markdown content in the response.
+        - in: query
+          name: includeHeadings
+          schema:
+            type: boolean
+            default: true
+          description: Whether to include headings in the response.
+        - in: query
+          name: limit
+          schema:
+            type: integer
+          description: Maximum number of entries to return.
+      responses:
+        "200":
+          description: Successful response with entries.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LifelogsResponse"
