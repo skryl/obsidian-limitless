@@ -1,8 +1,62 @@
 /*
-
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
-
-If your plugin does not need CSS, delete this file.
-
+Limitless plugin styles
 */
+
+/* Status container */
+.limitless-status-container {
+    margin-bottom: 2rem;
+    padding: 10px;
+    background-color: var(--background-secondary);
+    border-radius: 4px;
+    border: 1px solid var(--background-modifier-border);
+}
+
+/* Status text */
+.limitless-status-text {
+    margin-bottom: 10px;
+    font-weight: bold;
+}
+
+/* Progress bar container */
+.limitless-progress-container {
+    margin-bottom: 0.5rem;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    overflow: hidden;
+    height: 24px;
+    position: relative;
+    background-color: var(--background-primary);
+}
+
+/* Progress bar */
+.limitless-progress-bar {
+    background-color: var(--interactive-accent);
+    height: 100%;
+    transition: width 0.3s ease;
+}
+
+/* Progress text */
+.limitless-progress-text {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    padding: 0 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Progress text color based on background */
+.progress-text-on-accent {
+    color: var(--text-on-accent);
+}
+
+.progress-text-normal {
+    color: var(--text-normal);
+}

@@ -104,7 +104,7 @@ export default class LimitlessPlugin extends Plugin {
 		// Register commands
 		this.addCommand({
 			id: 'sync-limitless-lifelogs',
-			name: 'Sync Limitless Lifelogs',
+			name: 'Sync Lifelogs',
 			callback: async () => {
 				await this.syncLifelogs();
 				new Notice('Limitless Lifelogs synced!');
@@ -179,7 +179,8 @@ export default class LimitlessPlugin extends Plugin {
 			throw new Error(`${folderPath} exists but is not a folder`);
 		}
 		
-		return folder as TFolder;
+		// Return the folder - we know it's a TFolder because of the instanceof check above
+		return folder;
 	}
 
 	async getDailyNotePath(date: Date): Promise<string> {
@@ -992,14 +993,17 @@ class LimitlessSettingTab extends PluginSettingTab {
 
 		// Update progress bar
 		if (this.plugin.isSyncing) {
+			// Only update the width dynamically
 			this.progressBarEl.style.width = `${this.plugin.syncProgress}%`;
 			this.progressTextEl.textContent = `${this.plugin.syncProgress}%`;
 			
-			// Update text color based on progress
+			// Use class to update text color based on progress
 			if (this.plugin.syncProgress > 50) {
-				this.progressTextEl.style.color = 'var(--text-on-accent)';
+				this.progressTextEl.classList.add('progress-text-on-accent');
+				this.progressTextEl.classList.remove('progress-text-normal');
 			} else {
-				this.progressTextEl.style.color = 'var(--text-normal)';
+				this.progressTextEl.classList.add('progress-text-normal');
+				this.progressTextEl.classList.remove('progress-text-on-accent');
 			}
 		} else {
 			// Always show the progress bar, but at 100% when not syncing
@@ -1009,7 +1013,8 @@ class LimitlessSettingTab extends PluginSettingTab {
 			} else {
 				this.progressTextEl.textContent = 'Ready';
 			}
-			this.progressTextEl.style.color = 'var(--text-normal)';
+			this.progressTextEl.classList.add('progress-text-normal');
+			this.progressTextEl.classList.remove('progress-text-on-accent');
 		}
 	}
 
@@ -1365,18 +1370,11 @@ class LimitlessSettingTab extends PluginSettingTab {
 		
 
 
-		// Create a status container
+		// Create a status container with CSS classes instead of inline styles
 		const statusContainer = containerEl.createEl('div', { cls: 'limitless-status-container' });
-		statusContainer.style.marginBottom = '2rem';
-		statusContainer.style.padding = '10px';
-		statusContainer.style.backgroundColor = 'var(--background-secondary)';
-		statusContainer.style.borderRadius = '4px';
-		statusContainer.style.border = '1px solid var(--background-modifier-border)';
 
 		// Add status text element
 		this.statusTextEl = statusContainer.createEl('div', { cls: 'limitless-status-text' });
-		this.statusTextEl.style.marginBottom = '10px';
-		this.statusTextEl.style.fontWeight = 'bold';
 		this.statusTextEl.textContent = this.plugin.isSyncing ? this.plugin.syncProgressText : 'Ready';
 
 		// Add progress bar for sync operations
@@ -1384,36 +1382,10 @@ class LimitlessSettingTab extends PluginSettingTab {
 		this.progressBarEl = progressBarContainer.createEl('div', { cls: 'limitless-progress-bar' });
 		this.progressTextEl = progressBarContainer.createEl('div', { cls: 'limitless-progress-text' });
 		
-		// Add some CSS for the progress bar
-		progressBarContainer.style.marginBottom = '0.5rem';
-		progressBarContainer.style.border = '1px solid var(--background-modifier-border)';
-		progressBarContainer.style.borderRadius = '4px';
-		progressBarContainer.style.overflow = 'hidden';
-		progressBarContainer.style.height = '24px';
-		progressBarContainer.style.position = 'relative';
-		progressBarContainer.style.backgroundColor = 'var(--background-primary)';
-		
-		// Style the progress bar
+		// Set the initial width of the progress bar (only property we need to set dynamically)
 		this.progressBarEl.style.width = `${this.plugin.syncProgress}%`;
-		this.progressBarEl.style.backgroundColor = 'var(--interactive-accent)';
-		this.progressBarEl.style.height = '100%';
-		this.progressBarEl.style.transition = 'width 0.3s ease';
 		
-		// Style the progress text
-		this.progressTextEl.style.position = 'absolute';
-		this.progressTextEl.style.top = '0';
-		this.progressTextEl.style.left = '0';
-		this.progressTextEl.style.right = '0';
-		this.progressTextEl.style.bottom = '0';
-		this.progressTextEl.style.display = 'flex';
-		this.progressTextEl.style.alignItems = 'center';
-		this.progressTextEl.style.justifyContent = 'center';
-		this.progressTextEl.style.color = 'var(--text-on-accent)';
-		this.progressTextEl.style.fontWeight = 'bold';
-		this.progressTextEl.style.padding = '0 10px';
-		this.progressTextEl.style.whiteSpace = 'nowrap';
-		this.progressTextEl.style.overflow = 'hidden';
-		this.progressTextEl.style.textOverflow = 'ellipsis';
+		// Set the text content
 		this.progressTextEl.textContent = this.plugin.syncProgressText || 'Ready';
 		
 
