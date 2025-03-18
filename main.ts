@@ -88,8 +88,19 @@ export default class LimitlessPlugin extends Plugin {
 		}
 	}
 
+	// This method isn't actually needed in Obsidian plugins
+	// Obsidian automatically loads the styles.css file from the plugin directory
+	loadStyles(): void {
+		// In Obsidian plugins, the styles.css file is automatically loaded when the plugin is enabled
+		// This method is just a placeholder to support our call in onload()
+		this.log('Loading styles from styles.css');
+	}
+
 	async onload() {
 		await this.loadSettings();
+
+		// Load CSS styles
+		this.loadStyles();
 
 		// Create the ribbon icon for manual sync
 		const ribbonIconEl = this.addRibbonIcon('sync', 'Limitless - Sync Lifelogs', async () => {
