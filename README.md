@@ -7,13 +7,10 @@ This plugin integrates Obsidian with the Limitless API to create daily notes fro
 - **Automatic Syncing**: Syncs with the Limitless API at configurable intervals
 - **Daily Notes Integration**: Creates or updates daily notes with your lifelog content
 - **Smart Syncing**: Remembers the last sync timestamp to only fetch new entries
-- **Non-destructive Updates**: Appends new items to existing notes without overwriting your changes
 - **Manual Control**: Provides sync options via ribbon icon and command palette
 - **Flexible Configuration**: Customizable API URL, API key, output folder, and sync interval
 - **Visual Progress Tracking**: Progress bar shows sync status and completion percentage
-- **Cancellable Syncs**: Ability to cancel ongoing sync operations
-- **Parallel Processing**: Uses multi-threaded queue system for faster syncing of multiple days
-- **Robust Error Handling**: Automatically retries on server errors and implements rate limiting with exponential backoff
+- **Parallel Processing**: Uses multi-threaded queue system for faster historical data backfill 
 
 ## Installation
 
@@ -62,6 +59,25 @@ This plugin integrates Obsidian with the Limitless API to create daily notes fro
 
 ## Usage
 
+### Configuration Settings
+
+#### Required Settings
+- **API URL**: The URL for the Limitless API (default: `https://api.limitless.ai/v1`).
+- **API Key**: Your personal Limitless API key for authentication.
+- **Output Folder**: Where daily notes will be created (default: `Limitless`).
+
+#### Sync Options
+- **Sync Interval**: How often to automatically sync (in minutes, default: 60).
+- **Start Date**: The earliest date to fetch lifelogs from (default: January 1st of current year).
+- **Use System Timezone**: Whether to use your computer's timezone for API requests (default: enabled). This ensures lifelogs are properly matched to your local day.
+- **Ascending Order**: Controls how entries are sorted within daily notes:
+  - When enabled: Older entries appear at the top, newer at the bottom.
+  - When disabled (default): Newer entries appear at the top, older at the bottom.
+- **Force Overwrite**: When enabled, always overwrites existing daily notes during sync instead of appending (default: disabled).
+
+#### Advanced Options
+- **Debug Mode**: Enables detailed logging to help with troubleshooting (default: disabled).
+
 ### Automatic Syncing
 Once configured, the plugin will automatically sync with the Limitless API at the interval you specified. New lifelog entries will be fetched and added to the appropriate daily notes.
 
@@ -71,10 +87,13 @@ You can manually trigger a sync in two ways:
 - Use the command palette (Ctrl/Cmd+P) and search for "Limitless: Sync Lifelogs"
 
 ### Force Sync
-If you need to re-sync all your lifelogs and overwrite existing daily notes:
+If you need to re-sync all your lifelogs from a specific date:
 1. Go to Settings > Community plugins > Limitless > Settings
-2. Click the "Force Sync" button
-3. Confirm the warning prompt
+2. Optional: Change the Start Date to choose when to begin the sync
+3. Click the "Force Sync" button
+4. Confirm the warning prompt
+
+This operation doesn't reset your last sync timestamp, allowing you to do a historical data backfill without disrupting your regular sync schedule.
 
 ### Monitoring Sync Progress
 During sync operations, a progress bar in the settings tab shows:
@@ -89,10 +108,10 @@ If you need to stop an ongoing sync operation:
 3. The sync will gracefully terminate after completing the current operation
 
 ### Parallel Processing
-For full syncs or multi-day syncs, the plugin uses a 10-thread queue system with each thread responsible for fetching a day of data. This significantly improves sync performance when processing large amounts of data.
+For full syncs or multi-day syncs, the plugin uses a parallel processing system with multiple threads each responsible for fetching a day of data. This significantly improves sync performance when processing large amounts of data.
 
 ### Daily Notes Format
-Each lifelog entry will be added to a daily note with the format `YYYY-MM-DD.md` in your specified output folder. Entries are organized chronologically and formatted as markdown content.
+Each lifelog entry will be added to a daily note with the format `YYYY-MM-DD.md` in your specified output folder. Entries are organized chronologically according to your sort order preference and formatted as markdown content.
 
 ## Troubleshooting
 
