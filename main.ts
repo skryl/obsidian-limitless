@@ -134,7 +134,8 @@ export default class LimitlessPlugin extends Plugin {
 
 	onunload() {
 		if (this.syncIntervalId) {
-			window.clearInterval(this.syncIntervalId);
+			window.clearTimeout(this.syncIntervalId);
+			this.log('Cleared sync timeout on plugin unload');
 		}
 	}
 
@@ -152,13 +153,27 @@ export default class LimitlessPlugin extends Plugin {
 		// Clear existing interval if it exists
 		if (this.syncIntervalId) {
 			window.clearInterval(this.syncIntervalId);
+			this.syncIntervalId = null;
+			this.log('Cleared existing sync interval');
 		}
 
 		// Set up new interval
 		const intervalMs = this.settings.syncIntervalMinutes * 60 * 1000;
-		this.syncIntervalId = window.setInterval(async () => {
-			await this.syncLifelogs();
-		}, intervalMs);
+		this.log(`Setting up sync interval to run every ${this.settings.syncIntervalMinutes} minutes (${intervalMs}ms)`);
+		
+		// Use window.setTimeout instead of window.setInterval for more reliable scheduling
+		const scheduleNextSync = () => {
+			this.syncIntervalId = window.setTimeout(async () => {
+				this.log('Running scheduled sync...');
+				await this.syncLifelogs();
+				// Schedule the next sync after this one completes
+				this.syncIntervalId = null;
+				scheduleNextSync();
+			}, intervalMs);
+		};
+		
+		// Start the first scheduled sync
+		scheduleNextSync();
 	}
 
 	async ensureOutputFolder(): Promise<TFolder> {
@@ -926,9 +941,11 @@ export default class LimitlessPlugin extends Plugin {
 			
 			// Update the last sync timestamp only for regular syncs, not force syncs
 			if (!forceSync) {
-				this.settings.lastSyncTimestamp = latestTimestamp;
+				// Use current time instead of latestTimestamp
+				const currentTime = new Date().toISOString();
+				this.settings.lastSyncTimestamp = currentTime;
 				await this.saveSettings();
-				this.log('Updated last sync timestamp:', latestTimestamp);
+				this.log('Updated last sync timestamp to current time:', currentTime);
 			} else {
 				this.log('Force sync completed without updating last sync timestamp');
 			}
