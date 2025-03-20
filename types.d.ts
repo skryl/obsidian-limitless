@@ -29,17 +29,25 @@ declare module 'obsidian' {
         modify(file: TFile, data: string): Promise<void>;
         create(path: string, data: string): Promise<TFile>;
         createFolder(path: string): Promise<TFolder>;
+        configDir: string;
         adapter: {
             exists(path: string): Promise<boolean>;
+            read(path: string): Promise<string>;
+            write(path: string, data: string): Promise<void>;
         };
+        getMarkdownFiles(): TFile[];
     }
     
     export class TFile {
         path: string;
+        name: string;
+        extension: string;
     }
     
     export class TFolder {
         path: string;
+        name: string;
+        children: (TFile | TFolder)[];
     }
     
     export interface PluginManifest {
@@ -75,6 +83,9 @@ declare module 'obsidian' {
         addText(cb: (text: any) => any): this;
         addButton(cb: (button: any) => any): this;
         addSlider(cb: (slider: any) => any): this;
+        addToggle(cb: (toggle: any) => any): this;
+        addDropdown(cb: (dropdown: any) => any): this;
+        addTextArea(cb: (textarea: any) => any): this;
     }
     
     export class Notice {

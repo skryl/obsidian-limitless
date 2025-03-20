@@ -2,6 +2,18 @@
 Limitless plugin styles
 */
 
+/* Basic settings layout */
+.limitless-setting-tab h2 {
+    margin-bottom: 1rem;
+    border-bottom: 1px solid var(--background-modifier-border);
+    padding-bottom: 0.5rem;
+}
+
+.limitless-setting-tab h3 {
+    margin-top: 1.5rem;
+    margin-bottom: 0.5rem;
+}
+
 /* Status container */
 .limitless-status-container {
     margin-bottom: 2rem;
@@ -58,5 +70,154 @@ Limitless plugin styles
 }
 
 .progress-text-normal {
+    color: var(--text-normal);
+}
+
+/* Show/hide button for API key */
+.show-hide-button {
+    margin-left: 8px;
+    font-size: 12px;
+}
+
+/* Spinner for loading states */
+.loading-spinner {
+    display: inline-block;
+    margin-left: 10px;
+}
+
+.spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(var(--interactive-accent-rgb), 0.3);
+    border-radius: 50%;
+    border-top-color: var(--interactive-accent);
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Settings Tab Styles */
+
+/* Progress bar container styles */
+.progress-bar-container {
+    margin-top: 10px;
+    margin-bottom: 10px;
+}
+
+/* Progress header styles */
+.progress-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 5px;
+}
+
+/* Progress text styles */
+.progress-text {
+    font-size: 12px;
+    flex: 1;
+}
+
+/* Progress count styles */
+.progress-count {
+    font-size: 12px;
+    margin-right: 10px;
+    color: var(--text-muted);
+}
+
+/* Cancel button styles */
+.cancel-sync-button {
+    font-size: 12px;
+    padding: 2px 8px;
+    background-color: var(--background-modifier-error);
+    color: white;
+    border-radius: 4px;
+    border: none;
+    cursor: pointer;
+}
+
+.cancel-sync-button:hover {
+    background-color: var(--background-modifier-error-hover);
+}
+
+.cancel-sync-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Progress bar outer styles */
+.progress-bar-outer {
+    width: 100%;
+    height: 8px;
+    background-color: var(--background-modifier-border);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+/* Progress bar inner styles */
+.progress-bar-inner {
+    height: 100%;
+    background-color: var(--interactive-accent);
+    width: 0%;
+    transition: width 0.3s ease;
+}
+
+/* Summarization header styles */
+.summarization-header {
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+/* Debug info styles */
+.debug-info {
+    margin-top: 10px;
+    padding: 10px;
+    background-color: var(--background-secondary);
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 12px;
+}
+
+/* Sync progress section in debug settings */
+.limitless-setting-tab h4 {
+    margin-top: 1rem;
+    margin-bottom: 0.5rem;
+    font-size: 0.9rem;
+    color: var(--text-normal);
+}
+
+/* Settings form elements */
+.limitless-textarea {
+    width: 100%;
+}
+
+/* Fix for settings containers */
+.setting-item {
+    border-top: 1px solid var(--background-modifier-border);
+    padding-top: 10px;
+    margin-top: 10px;
+}
+
+/* Ensure inputs are visible */
+.setting-item input,
+.setting-item textarea,
+.setting-item select,
+.setting-item button {
+    background-color: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    color: var(--text-normal);
+    padding: 4px 8px;
+    border-radius: 4px;
+}
+
+/* Make sure icons are visible */
+.clickable-icon {
+    color: var(--text-muted);
+}
+
+.clickable-icon:hover {
     color: var(--text-normal);
 }
