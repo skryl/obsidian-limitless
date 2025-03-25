@@ -15,17 +15,12 @@ export class LimitlessPlugin extends Plugin implements SyncState, SummarizationS
     // Sync state
     isSyncing: boolean = false;
     cancelSync: boolean = false;
-    syncProgress: number = 0;
-    syncCurrent: number = 0;
-    syncTotal: number = 0;
-    syncProgressText: string = '';
+    lastSyncStatus: string = 'Idle';
     
     // Summarization state
     isSummarizing: boolean = false;
     cancelSummarization: boolean = false;
-    summarizationCurrent: number = 0;
-    summarizationTotal: number = 0;
-    summarizationProgressText: string = '';
+    lastSummarizationStatus: string = 'Idle';
     
     private syncIntervalId: number | null = null;
 
@@ -42,9 +37,6 @@ export class LimitlessPlugin extends Plugin implements SyncState, SummarizationS
 
         // Register commands
         this.addCommands();
-        
-        // Add status bar
-        this.addStatusBar();
         
         // Register interval
         this.registerSyncInterval();
@@ -75,6 +67,50 @@ export class LimitlessPlugin extends Plugin implements SyncState, SummarizationS
             console.log('Limitless:', ...args);
         }
     }
+    
+    /**
+     * Update the sync status in the settings tab
+     * @param message The status message to display
+     */
+    updateSyncStatus(message: string): void {
+        // Store the status for reference
+        this.lastSyncStatus = message;
+        
+        // Get settings tab instance if it exists
+        const settingsTabs = (this.app as any).setting?.settingTabs;
+        const settingsTab = settingsTabs ? 
+            settingsTabs.find((tab: any) => tab.id === 'limitless') : undefined;
+        
+        if (settingsTab && typeof settingsTab.updateStatusDisplay === 'function') {
+            settingsTab.updateStatusDisplay('sync', message);
+        }
+        
+        // Also log the status update if debug is enabled
+        this.log('Sync Status:', message);
+    }
+    
+    /**
+     * Update the summarization status in the settings tab
+     * @param message The status message to display
+     */
+    updateSummarizationStatus(message: string): void {
+        // Store the status for reference
+        this.lastSummarizationStatus = message;
+        
+        // Get settings tab instance if it exists
+        const settingsTabs = (this.app as any).setting?.settingTabs;
+        const settingsTab = settingsTabs ? 
+            settingsTabs.find((tab: any) => tab.id === 'limitless') : undefined;
+        
+        if (settingsTab && typeof settingsTab.updateStatusDisplay === 'function') {
+            settingsTab.updateStatusDisplay('summarization', message);
+        }
+        
+        // Also log the status update if debug is enabled
+        this.log('Summarization Status:', message);
+    }
+    
+
 
     /**
      * Add plugin commands
@@ -134,29 +170,7 @@ export class LimitlessPlugin extends Plugin implements SyncState, SummarizationS
         });
     }
 
-    /**
-     * Add status bar item
-     */
-    private addStatusBar(): void {
-        // Remove if it already exists
-        const statusBarEl = this.addStatusBarItem();
-        statusBarEl.setText('Limitless: Ready');
-        
-        // Update status bar text when syncing
-        const updateStatusBar = () => {
-            if (this.isSyncing) {
-                statusBarEl.setText(`Limitless: ${this.syncProgressText}`);
-            } else if (this.isSummarizing) {
-                statusBarEl.setText(`Limitless: ${this.summarizationProgressText}`);
-            } else {
-                statusBarEl.setText('Limitless: Ready');
-            }
-            
-            window.requestAnimationFrame(updateStatusBar);
-        };
-        
-        window.requestAnimationFrame(updateStatusBar);
-    }
+
 
     /**
      * Register sync interval
@@ -213,7 +227,6 @@ export class LimitlessPlugin extends Plugin implements SyncState, SummarizationS
         
         this.log('Cancelling sync operation...');
         this.cancelSync = true;
-        this.syncProgressText = 'Cancelling sync...';
         
         // Cancel any active API requests
         this.apiService.cancelAllRequests();
@@ -270,10 +283,13 @@ export class LimitlessPlugin extends Plugin implements SyncState, SummarizationS
             // Reset cancellation flag and set syncing state
             this.cancelSync = false;
             this.isSyncing = true;
-            this.syncProgress = 0;
-            this.syncCurrent = 0;
-            this.syncTotal = 0;
-            this.syncProgressText = 'Preparing to sync...';
+            
+            // Update status immediately with appropriate message
+            if (forceFull) {
+                this.updateSyncStatus('Force syncing from start date...');
+            } else {
+                this.updateSyncStatus('Syncing new data...');
+            }
             
             if (forceFull) {
                 // Perform full sync from start date
@@ -287,7 +303,7 @@ export class LimitlessPlugin extends Plugin implements SyncState, SummarizationS
             if (this.cancelSync) {
                 this.log('Sync operation was cancelled by user');
                 new Notice(`Sync cancelled.`);
-                this.syncProgressText = `Sync cancelled`;
+                this.updateSyncStatus('Cancelled');
                 return;
             }
             
@@ -297,26 +313,34 @@ export class LimitlessPlugin extends Plugin implements SyncState, SummarizationS
                 await this.saveSettings();
             }
             
-            // Update status
-            this.syncProgress = 100;
-            this.syncProgressText = 'Sync complete';
+
             if (!this.cancelSync) {
                 new Notice('Lifelogs sync complete');
+                
+                // Reset sync state and update UI
+                this.isSyncing = false;
+                this.updateSyncStatus('Idle');
+                
+                // Force UI refresh if needed
+                const settingsTabs = (this.app as any).setting?.settingTabs;
+                const settingsTab = settingsTabs ? 
+                    settingsTabs.find((tab: any) => tab.id === 'limitless') : undefined;
+                if (settingsTab && typeof settingsTab.updateStatusDisplay === 'function') {
+                    // Force a UI refresh after a small delay
+                    setTimeout(() => {
+                        settingsTab.updateStatusDisplay('sync', 'Idle');
+                    }, 50);
+                }
             }
         } catch (error) {
             console.error('Error syncing lifelogs:', error);
-            this.syncProgressText = `Error: ${error.message}`;
             new Notice(`Error syncing lifelogs: ${error.message}`);
+            this.updateSyncStatus(`Error: ${error.message}`);
+            
         } finally {
-            // Reset syncing state and cancel flag after a delay
-            setTimeout(() => {
-                this.isSyncing = false;
-                this.cancelSync = false;
-                this.syncProgress = 0;
-                this.syncCurrent = 0;
-                this.syncTotal = 0;
-                this.syncProgressText = '';
-            }, 2000);
+                // Reset syncing state and cancel flag immediately
+            this.isSyncing = false;
+            this.cancelSync = false;
         }
     }
 
@@ -337,7 +361,7 @@ export class LimitlessPlugin extends Plugin implements SyncState, SummarizationS
             this.log(`Fetching lifelogs since last sync: ${timestamp}`);
         }
         
-        this.syncProgressText = `Fetching lifelogs since ${timestamp}...`;
+
         
         try {
             // Check for early cancellation
@@ -357,7 +381,7 @@ export class LimitlessPlugin extends Plugin implements SyncState, SummarizationS
             
             if (lifelogs.length === 0) {
                 this.log('No new lifelogs found');
-                this.syncProgressText = 'No new lifelogs found';
+
                 return;
             }
             
@@ -377,7 +401,6 @@ export class LimitlessPlugin extends Plugin implements SyncState, SummarizationS
             
             // Write lifelogs to notes
             const dates = Object.keys(lifelogsByDate);
-            this.syncTotal = dates.length;
             
             for (let i = 0; i < dates.length; i++) {
                 // Check for cancellation before each file operation
@@ -389,9 +412,8 @@ export class LimitlessPlugin extends Plugin implements SyncState, SummarizationS
                 const date = dates[i];
                 const logs = lifelogsByDate[date];
                 
-                this.syncCurrent = i + 1;
-                this.syncProgressText = `Writing lifelogs for ${date}... (${i + 1}/${dates.length})`;
-                this.syncProgress = Math.floor(((i + 1) / dates.length) * 100);
+
+
                 
                 await this.fileUtils.writeLifelogsToNote(date, logs);
             }
@@ -399,7 +421,7 @@ export class LimitlessPlugin extends Plugin implements SyncState, SummarizationS
             this.log(`Processed ${lifelogs.length} lifelogs for ${dates.length} dates`);
         } catch (error) {
             this.log('Error fetching lifelogs since last sync:', error);
-            throw error;
+            new Notice(`Error fetching lifelogs: ${error.message || 'Unknown error'}`);
         }
     }
 
@@ -407,7 +429,7 @@ export class LimitlessPlugin extends Plugin implements SyncState, SummarizationS
      * Fetch all lifelogs from the start date
      */
     private async fetchAllLifelogsFromStartDate(): Promise<void> {
-        this.syncProgressText = `Starting full sync from ${this.settings.startDate}...`;
+
         
         try {
             // Check for early cancellation
@@ -417,18 +439,21 @@ export class LimitlessPlugin extends Plugin implements SyncState, SummarizationS
             }
             
             const now = new Date();
-            const startDate = new Date(this.settings.startDate);
+            let startDate = new Date(this.settings.startDate);
             
             // Calculate number of days to fetch
             const msPerDay = 24 * 60 * 60 * 1000;
-            const numDays = Math.ceil((now.getTime() - startDate.getTime()) / msPerDay) + 1;
+            let numDays = Math.ceil((now.getTime() - startDate.getTime()) / msPerDay) + 1;
             
             if (numDays <= 0) {
-                throw new Error('Start date must be in the past');
+                this.log(`Start date must be in the past! Using today.`);
+                new Notice(`Start date must be in the past! Using today.`);
+                startDate = new Date();
+                numDays = 1;
             }
             
-            this.log(`Fetching lifelogs for ${numDays} days from ${this.settings.startDate} to today`);
-            this.syncTotal = numDays;
+            this.log(`Fetching lifelogs for ${numDays} days from ${startDate.toISOString().split('T')[0]} to today`);
+
             
             // Process each day
             const allLifelogsByDate: Record<string, Lifelog[]> = {};
@@ -444,9 +469,7 @@ export class LimitlessPlugin extends Plugin implements SyncState, SummarizationS
                 const date = new Date(startDate.getTime() + i * msPerDay);
                 const dateStr = date.toISOString().split('T')[0];
                 
-                this.syncCurrent = i + 1;
-                this.syncProgressText = `Fetching lifelogs for ${dateStr}... (${i + 1}/${numDays})`;
-                this.syncProgress = Math.floor((i / numDays) * 50); // First half of progress bar
+
                 
                 // Skip future dates
                 if (date > now) {
@@ -485,8 +508,7 @@ export class LimitlessPlugin extends Plugin implements SyncState, SummarizationS
                 const date = dates[i];
                 const logs = allLifelogsByDate[date];
                 
-                this.syncProgressText = `Writing lifelogs for ${date}... (${i + 1}/${dates.length})`;
-                this.syncProgress = 50 + Math.floor(((i + 1) / dates.length) * 50); // Second half of progress bar
+
                 
                 await this.fileUtils.writeLifelogsToNote(date, logs);
             }
@@ -496,7 +518,7 @@ export class LimitlessPlugin extends Plugin implements SyncState, SummarizationS
             this.log(`Full sync completed. Processed ${totalLifelogs} lifelogs for ${dates.length} dates`);
         } catch (error) {
             this.log('Error during full sync:', error);
-            throw error;
+            new Notice(`Error during full sync: ${error.message || 'Unknown error'}`);
         }
     }
 }

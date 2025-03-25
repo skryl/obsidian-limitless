@@ -11,14 +11,10 @@ declare module 'limitless-types' {
     export interface SummarizationState {
         isSummarizing: boolean;
         cancelSummarization: boolean;
-        summarizationCurrent: number;
-        summarizationTotal: number;
-        summarizationProgressText: string;
     }
     
     export interface SyncState {
         isSyncing: boolean;
-        syncProgress: number;
-        syncProgressText: string;
+        cancelSync: boolean;
     }
 }

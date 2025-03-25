@@ -9,7 +9,6 @@ This plugin integrates Obsidian with the Limitless API to create daily notes fro
 - **Smart Syncing**: Remembers the last sync timestamp to only fetch new entries
 - **Manual Control**: Provides sync options via ribbon icon and command palette
 - **Flexible Configuration**: Customizable API URL, API key, output folder, and sync interval
-- **Visual Progress Tracking**: Progress bar shows sync status and completion percentage
 - **Parallel Processing**: Uses multi-threaded queue system for faster historical data backfill 
 
 ## Installation
@@ -119,7 +118,6 @@ Each lifelog entry will be added to a daily note with the format `YYYY-MM-DD.md`
 - **Sync errors**: Check your internet connection and Limitless API status
 - **Missing notes**: Ensure the output folder exists and Obsidian has permission to write to it
 - **Sync appears stuck**: Try cancelling the sync and starting again, or check the console for error messages
-- **Progress bar not updating**: The progress bar updates every 500ms; for very large syncs, it might appear to move slowly
 - **Slow sync performance**: For large data sets, the plugin uses parallel processing, but network conditions and API rate limits can still affect speed
 - **API rate limiting**: The plugin automatically handles rate limiting (HTTP 429) with exponential backoff, waiting for the appropriate time before retrying
 - **Server errors**: The plugin will automatically retry up to 3 times with increasing delays when encountering server errors (HTTP 5xx)

@@ -1,4 +1,4 @@
-import { App, TFile, TFolder, normalizePath } from 'obsidian';
+import { App, Notice, TFile, TFolder, normalizePath } from 'obsidian';
 import { format } from 'date-fns';
 import type { Lifelog } from 'limitless-types';
 import { ILimitlessPlugin } from '../models/plugin-interface';
@@ -13,7 +13,7 @@ export class FileUtils {
     /**
      * Ensure output folder exists
      */
-    async ensureOutputFolder(): Promise<TFolder> {
+    async ensureOutputFolder(): Promise<TFolder | null> {
         const folderPath = normalizePath(this.plugin.settings.outputFolder);
         
         // Try to get the folder
@@ -24,7 +24,10 @@ export class FileUtils {
             this.plugin.log(`Creating output folder: ${folderPath}`);
             folder = await this.plugin.app.vault.createFolder(folderPath);
         } else if (!(folder instanceof TFolder)) {
-            throw new Error(`${folderPath} exists but is not a folder`);
+            const errorMsg = `${folderPath} exists but is not a folder`;
+            this.plugin.log(errorMsg);
+            new Notice(errorMsg);
+            return null; // Return null to indicate failure
         }
         
         return folder as TFolder;
@@ -119,7 +122,8 @@ export class FileUtils {
             }
         } catch (error) {
             this.plugin.log(`Error writing lifelogs for ${date}:`, error);
-            throw error;
+            new Notice(`Error writing lifelogs: ${error.message || 'Unknown error'}`);
+            // Continue without throwing
         }
     }
 

@@ -1,6 +1,7 @@
 import { Notice, TFile, TFolder, normalizePath, requestUrl } from 'obsidian';
 import { LimitlessPluginSettings } from '../models/settings';
 import { ILimitlessPlugin } from '../models/plugin-interface';
+import { SyncState } from '../models/types';
 import type { Lifelog } from 'limitless-types';
 
 // Type definitions for API responses
@@ -18,7 +19,7 @@ export interface LifelogsResponse {
 
 export class LimitlessAPIService {
     private plugin: ILimitlessPlugin;
-    private activeFetchRequests: AbortController[] = [];
+    private activeFetchRequests: number = 0; // Track number of active requests
     
     // Constants for retry logic
     private readonly MAX_RETRIES = 5;
@@ -27,24 +28,45 @@ export class LimitlessAPIService {
     constructor(plugin: ILimitlessPlugin) {
         this.plugin = plugin;
     }
+    
+
 
     /**
      * Fetch lifelogs from the API for a specific day
      */
     async fetchLifelogsForDay(date: string): Promise<Lifelog[]> {
         try {
-            this.plugin.log(`Fetching lifelogs for ${date}...`);
+            // Check if operation was cancelled before starting
+            const syncState = this.plugin as unknown as SyncState;
+            if (syncState.cancelSync) {
+                this.plugin.log(`Fetch operation for ${date} cancelled before starting`);
+                this.plugin.updateSyncStatus('Sync cancelled');
+                throw new Error('Operation cancelled');
+            }
             
-            // Build the API endpoint URL with the date
-            const endpoint = `${this.plugin.settings.apiUrl}/lifelogs/day/${date}`;
+            this.plugin.log(`Fetching lifelogs for ${date}...`);
+            this.plugin.updateSyncStatus(`Fetching lifelogs for ${date}...`);
+            
+            // Build the API endpoint URL with the date parameter
+            let endpoint = `${this.plugin.settings.apiUrl}/lifelogs?includeMarkdown=true&sort=desc&limit=10&date=${encodeURIComponent(date)}`;
+            
+            // Add timezone parameter if enabled
+            if (this.plugin.settings.useSystemTimezone) {
+                const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                endpoint += `&timezone=${encodeURIComponent(timezone)}`;
+                this.plugin.log('Using timezone for API request:', timezone);
+            }
             
             // Make the API request
             const response = await this.makeApiRequest(endpoint);
             
             this.plugin.log(`Retrieved ${response.lifelogs?.length || 0} lifelogs for ${date}`);
+            this.plugin.updateSyncStatus(`Retrieved ${response.lifelogs?.length || 0} lifelogs for ${date}`);
             return response.lifelogs || [];
         } catch (error) {
             this.plugin.log('Error fetching lifelogs for day:', error);
+            this.plugin.updateSyncStatus('Sync failed - See logs for details');
+            new Notice(`Error fetching lifelogs: ${error.message || 'Unknown error'}`);
             throw error;
         }
     }
@@ -54,23 +76,37 @@ export class LimitlessAPIService {
      */
     async fetchLifelogsSince(timestamp: string): Promise<Lifelog[]> {
         try {
-            this.plugin.log(`Fetching lifelogs since ${timestamp}...`);
+            // Check if operation was cancelled before starting
+            const syncState = this.plugin as unknown as SyncState;
+            if (syncState.cancelSync) {
+                this.plugin.log('Fetch operation cancelled before starting');
+                this.plugin.updateSyncStatus('Sync cancelled');
+                throw new Error('Operation cancelled');
+            }
             
-            // Build the API endpoint URL with the timestamp
-            const endpoint = `${this.plugin.settings.apiUrl}/lifelogs/since/${timestamp}`;
+            this.plugin.log(`Fetching lifelogs since ${timestamp}...`);
+            this.plugin.updateSyncStatus(`Fetching lifelogs since ${timestamp}...`);
+            
+            // Build the API endpoint URL with the start timestamp parameter
+            let endpoint = `${this.plugin.settings.apiUrl}/lifelogs?includeMarkdown=true&sort=desc&limit=10&start=${encodeURIComponent(timestamp)}`;
             
             // Include timezone parameter if enabled
-            const params = this.plugin.settings.useSystemTimezone 
-                ? `?timezone=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone)}`
-                : '';
+            if (this.plugin.settings.useSystemTimezone) {
+                const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                endpoint += `&timezone=${encodeURIComponent(timezone)}`;
+                this.plugin.log('Using timezone for API request:', timezone);
+            }
             
             // Make the API request with retries
-            const response = await this.makeApiRequest(endpoint + params);
+            const response = await this.makeApiRequest(endpoint);
             
             this.plugin.log(`Retrieved ${response.lifelogs?.length || 0} lifelogs since ${timestamp}`);
+            this.plugin.updateSyncStatus(`Retrieved ${response.lifelogs?.length || 0} lifelogs since ${timestamp}`);
             return response.lifelogs || [];
         } catch (error) {
             this.plugin.log('Error fetching lifelogs since timestamp:', error);
+            this.plugin.updateSyncStatus('Sync failed - See logs for details');
+            new Notice(`Error fetching lifelogs: ${error.message || 'Unknown error'}`);
             throw error;
         }
     }
@@ -82,26 +118,28 @@ export class LimitlessAPIService {
         // Create a request ID for tracking
         const requestId = Math.random().toString(36).substring(2, 15);
         
-        // Create an AbortController for this request
-        const controller = new AbortController();
-        controller['requestId'] = requestId;
+        // Track that we're starting a request
+        this.activeFetchRequests += 1;
         
-        // Add to active requests list for tracking and potential cancellation
-        this.activeFetchRequests.push(controller);
+        this.plugin.log(`Starting API request ${requestId}, active requests: ${this.activeFetchRequests}`);
         
         try {
+            // Check if operation was cancelled before starting
+            const syncState = this.plugin as unknown as SyncState;
+            if (syncState.cancelSync) {
+                this.plugin.log(`Request ${requestId} cancelled before starting`);
+                throw new Error('Operation cancelled');
+            }
+            
             // Start building the URL with required parameters
             let url = `${this.plugin.settings.apiUrl}/lifelogs?includeMarkdown=true&sort=desc`;
 
             // Add limit parameter (API has a max of 10 per request)
             url += '&limit=10';
             
-            // Add timezone parameter if enabled
-            if (this.plugin.settings.useSystemTimezone) {
-                const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-                url += `&timezone=${encodeURIComponent(timezone)}`;
-                this.plugin.log('Using timezone for API request:', timezone);
-            }
+            const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            url += `&timezone=${encodeURIComponent(timezone)}`;
+            this.plugin.log('Using timezone for API request:', timezone);
             
             // Add date parameter if provided (for day-by-day sync)
             if (date) {
@@ -132,11 +170,9 @@ export class LimitlessAPIService {
                 }
             });
             
-            // Remove from active requests list
-            const index = this.activeFetchRequests.indexOf(controller);
-            if (index > -1) {
-                this.activeFetchRequests.splice(index, 1);
-            }
+            // Decrement active request count
+            this.activeFetchRequests -= 1;
+            this.plugin.log(`Completed API request ${requestId}, remaining active requests: ${this.activeFetchRequests}`);
             
             this.plugin.log('Response status:', response.status);
             const responseData = response.json as LifelogsResponse;
@@ -151,17 +187,25 @@ export class LimitlessAPIService {
 
             return responseData;
         } catch (error) {
-            // Remove from active requests list
-            const index = this.activeFetchRequests.indexOf(controller);
-            if (index > -1) {
-                this.activeFetchRequests.splice(index, 1);
-            }
+            // Decrement active request count
+            this.activeFetchRequests -= 1;
+            this.plugin.log(`Completed API request ${requestId}, remaining active requests: ${this.activeFetchRequests}`);
             
             console.error('Error fetching lifelogs:', error);
             
+            // Check if operation was cancelled
+            const syncState = this.plugin as unknown as SyncState;
+            if (syncState.cancelSync) {
+                this.plugin.log(`Request ${requestId} was cancelled due to sync cancellation`);
+                throw new Error('Operation cancelled');
+            }
+            
             // Check for 401 Unauthorized error
             if (error.status === 401) {
-                throw new Error('Authentication failed. Please check your API key in the Limitless settings.');
+                const authError = 'Authentication failed. Please check your API key in the Limitless settings.';
+                this.plugin.log(authError);
+                new Notice(authError);
+                return { data: { lifelogs: [] } };
             }
             
             // Handle 5xx server errors with retries - specifically handle 504 Gateway Timeout
@@ -177,8 +221,10 @@ export class LimitlessAPIService {
                     await this.sleep(delay);
                     return this.fetchLifelogs(since, date, cursor, retryCount + 1);
                 } else {
-                    this.plugin.log(`Maximum retries (${this.MAX_RETRIES}) reached for server error.`);
-                    throw new Error(`Server error after ${this.MAX_RETRIES} retries: ${error.status} ${error.message}`);
+                    const maxRetryError = `Maximum retries (${this.MAX_RETRIES}) reached for server error: ${error.status} ${error.message}`;
+                    this.plugin.log(maxRetryError);
+                    new Notice(maxRetryError);
+                    return { data: { lifelogs: [] } };
                 }
             }
             
@@ -196,8 +242,10 @@ export class LimitlessAPIService {
                 return this.fetchLifelogs(since, date, cursor, retryCount + 1);
             }
             
-            // For other errors, just throw
-            throw error;
+            // For other errors, log and return empty response
+            this.plugin.log(`API request error: ${error.message || 'Unknown error'}`);
+            new Notice(`API request error: ${error.message || 'Unknown error'}`);
+            return { data: { lifelogs: [] } };
         }
     }
 
@@ -206,22 +254,68 @@ export class LimitlessAPIService {
      */
     private async makeApiRequest(endpoint: string, retryCount: number = 0): Promise<any> {
         if (!this.plugin.settings.apiKey) {
-            throw new Error('API key not set. Please configure your API key in the settings.');
+            const error = 'API key not set. Please configure your API key in the settings.';
+            this.plugin.log(error);
+            new Notice(error);
+            throw new Error(error);
         }
+        
+        // Generate a unique request ID for logging
+        const requestId = Math.random().toString(36).substring(2, 10);
 
         try {
+            // Log the request details in debug mode
+            this.plugin.log(`[${requestId}] API Request:`, {
+                method: 'GET',
+                url: endpoint,
+                headers: {
+                    'X-API-Key': 'REDACTED',
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            const startTime = Date.now();
             const response = await requestUrl({
                 url: endpoint,
                 method: 'GET',
                 headers: {
-                    'Authorization': `Bearer ${this.plugin.settings.apiKey}`,
+                    'X-API-Key': `${this.plugin.settings.apiKey}`,
                     'Content-Type': 'application/json'
                 }
             });
+            const endTime = Date.now();
+            
+            // Log the response details in debug mode (Obsidian's requestUrl doesn't throw on HTTP error status)
+            this.plugin.log(`[${requestId}] API Response received (${endTime - startTime}ms) with status: ${response.status}`);
+            
+            // Log full response details for debugging
+            try {
+                this.plugin.log(`[${requestId}] API Response details:`, {
+                    status: response.status,
+                    statusText: response.status.toString(),
+                    headers: response.headers,
+                    contentType: response.headers?.['content-type'],
+                    text: response.text ? response.text.substring(0, 300) : null,
+                    json: response.json
+                });
+            } catch (logError) {
+                this.plugin.log(`[${requestId}] Error logging response details: ${logError.message}`);
+            }
 
+            // Handle non-200 responses (requestUrl doesn't throw on HTTP error status)
             if (response.status !== 200) {
+                // Log detailed error information
+                this.plugin.log(`[${requestId}] API Error detected:`, {
+                    status: response.status,
+                    url: endpoint,
+                    errorText: response.text ? response.text.substring(0, 300) : 'No error text available'
+                });
+                
                 if (response.status === 401) {
-                    throw new Error('Authentication failed. Please check your API key.');
+                    const authError = 'Authentication failed. Please check your API key.';
+                    this.plugin.log(authError);
+                    new Notice(authError);
+                    throw new Error(authError);
                 }
                 
                 // Handle rate limiting (429)
@@ -245,7 +339,10 @@ export class LimitlessAPIService {
                         // Retry the request
                         return this.makeApiRequest(endpoint, retryCount + 1);
                     } else {
-                        throw new Error(`Rate limit exceeded after ${this.MAX_RETRIES} retries. Please try again later.`);
+                        const error = `Rate limit exceeded after ${this.MAX_RETRIES} retries. Please try again later.`;
+                        this.plugin.log(error);
+                        new Notice(error);
+                        throw new Error(error);
                     }
                 }
                 
@@ -265,7 +362,10 @@ export class LimitlessAPIService {
                     }
                 }
                 
-                throw new Error(`API request failed with status ${response.status}`);
+                const error = `API request failed with status ${response.status}`;
+                this.plugin.log(error);
+                new Notice(error);
+                throw new Error(`${error}: ${response.text.substring(0, 100)}${response.text.length > 100 ? '...' : ''}`);
             }
 
             return response.json;
@@ -279,9 +379,14 @@ export class LimitlessAPIService {
             }
             
             if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
-                throw new Error('Network error. Please check your internet connection and API URL.');
+                const networkError = 'Network error. Please check your internet connection and API URL.';
+                this.plugin.log(networkError);
+                new Notice(networkError);
+                throw new Error(networkError);
             }
             
+            this.plugin.log(`Unexpected API error: ${error.message || 'Unknown error'}`);
+            new Notice(`API error: ${error.message || 'Unknown error'}`);
             throw error;
         }
     }
@@ -289,12 +394,17 @@ export class LimitlessAPIService {
     /**
      * Cancel all active fetch requests
      */
+    /**
+     * Reset active request counter
+     * Note: With Obsidian's requestUrl we cannot actually cancel in-flight requests
+     * But we can track how many are active for logging purposes
+     */
     cancelAllRequests(): void {
-        this.plugin.log(`Cancelling ${this.activeFetchRequests.length} active requests`);
-        for (const controller of this.activeFetchRequests) {
-            controller.abort();
-        }
-        this.activeFetchRequests = [];
+        this.plugin.log(`Marking ${this.activeFetchRequests} active API requests as cancelled`);
+        // We can't actually cancel in-flight requests with requestUrl
+        // But we can reset the counter for tracking purposes
+        this.activeFetchRequests = 0;
+        this.plugin.log('API request tracking reset');
     }
     
     /**

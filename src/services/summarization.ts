@@ -1,4 +1,4 @@
-import { Notice, TFile, TFolder, normalizePath } from 'obsidian';
+import { Notice, TFile, TFolder, normalizePath, requestUrl } from 'obsidian';
 import { ILimitlessPlugin } from '../models/plugin-interface';
 import * as crypto from 'crypto';
 
@@ -11,7 +11,7 @@ async function sleep(ms: number): Promise<void> {
 
 export class SummarizationService {
     private plugin: ILimitlessPlugin;
-    private activeRequests: AbortController[] = [];
+    private activeRequests: number = 0; // Track number of active requests
     
     // Constants for retry logic
     private readonly MAX_RETRIES = 5;
@@ -20,6 +20,8 @@ export class SummarizationService {
     constructor(plugin: ILimitlessPlugin) {
         this.plugin = plugin;
     }
+    
+
 
     /**
      * Main method to summarize all notes
@@ -29,31 +31,57 @@ export class SummarizationService {
             // Reset state
             this.plugin.isSummarizing = true;
             this.plugin.cancelSummarization = false;
-            this.plugin.summarizationCurrent = 0;
-            this.plugin.summarizationTotal = 0;
-            this.plugin.summarizationProgressText = 'Checking for notes to summarize...';
+            
+            // Update status in UI with appropriate message
+            if (forceAll) {
+                this.plugin.updateSummarizationStatus('Starting force summarization from start date...');
+            } else {
+                this.plugin.updateSummarizationStatus('Starting incremental summarization...');
+            }
             
             // Get all notes that need summarization
             const notesToSummarize = await this.getNotesNeedingSummarization(forceAll);
-            this.plugin.summarizationTotal = notesToSummarize.length;
             
             if (notesToSummarize.length === 0) {
-                this.plugin.summarizationProgressText = 'No notes need summarization';
                 new Notice('No notes need summarization');
+                this.plugin.updateSummarizationStatus('No notes need summarization');
                 return;
             }
             
-            this.plugin.summarizationProgressText = `Summarizing ${notesToSummarize.length} notes...`;
             this.plugin.log(`Starting summarization of ${notesToSummarize.length} notes`);
+            this.plugin.updateSummarizationStatus(`Summarizing ${notesToSummarize.length} notes...`);
             
             // Process each note
             await this.processNotesForSummarization(notesToSummarize);
+            
+            // Update lastSummaryTimestamp and save settings
+            this.plugin.settings.lastSummaryTimestamp = new Date().toISOString();
+            await this.plugin.saveSettings();
+            
+            // Update status after successful completion
+            this.plugin.updateSummarizationStatus('Idle');
+            new Notice(`Summarization complete! ${notesToSummarize.length} notes processed.`);
         } catch (error) {
             console.error('Error during summarization:', error);
-            this.plugin.summarizationProgressText = `Error: ${error.message}`;
             new Notice(`Error during summarization: ${error.message}`);
+            
+            // Update status after error
+            this.plugin.updateSummarizationStatus(`Error: ${error.message}`);
         } finally {
+            // Always reset the summarizing flag
             this.plugin.isSummarizing = false;
+            
+            // Force UI refresh if settings tab is open
+            const settingsTabs = (this.plugin.app as any).setting?.settingTabs;
+            const settingsTab = settingsTabs ? 
+                settingsTabs.find((tab: any) => tab.id === 'limitless') : undefined;
+            if (settingsTab && typeof settingsTab.updateStatusDisplay === 'function') {
+                // Force a UI refresh with current status after a small delay
+                setTimeout(() => {
+                    const status = this.plugin.lastSummarizationStatus || 'Idle';
+                    settingsTab.updateStatusDisplay('summarization', status);
+                }, 50);
+            }
         }
     }
 
@@ -62,26 +90,33 @@ export class SummarizationService {
      */
     async cancelOngoingSummarization(): Promise<void> {
         this.plugin.log('Cancelling summarization');
+        this.plugin.updateSummarizationStatus('Cancelling summarization...');
         this.plugin.cancelSummarization = true;
+        
+        // Set status to cancelled after a brief delay
+        setTimeout(() => {
+            if (this.plugin.cancelSummarization) {
+                this.plugin.updateSummarizationStatus('Cancelled');
+                this.plugin.isSummarizing = false;
+            }
+        }, 1000);
         
         // Cancel any active API requests
         this.cancelAllRequests();
     }
     
     /**
-     * Cancel all active API requests
+     * Reset active request counter
+     * Note: With Obsidian's requestUrl we cannot actually cancel in-flight requests
+     * But we can track how many are active for logging purposes
      */
     cancelAllRequests(): void {
-        this.plugin.log(`Cancelling ${this.activeRequests.length} active OpenAI requests`);
-        
-        // Abort all active controllers
-        for (const controller of this.activeRequests) {
-            controller.abort();
-        }
-        
-        // Clear the list
-        this.activeRequests = [];
-        this.plugin.log('All OpenAI requests cancelled');
+        this.plugin.log(`Marking ${this.activeRequests} active OpenAI requests as cancelled`);
+        // We can't actually cancel in-flight requests with requestUrl
+        // But we can reset the counter to prevent counting obsolete requests
+        this.activeRequests = 0;
+        this.plugin.log('OpenAI request tracking reset');
+        this.plugin.updateSummarizationStatus('Summarization cancelled');
     }
 
     /**
@@ -95,14 +130,15 @@ export class SummarizationService {
         for (let i = 0; i < notePaths.length; i++) {
             // Check if summarization was cancelled
             if (this.plugin.cancelSummarization) {
-                this.plugin.summarizationProgressText = 'Summarization cancelled';
+                this.plugin.log('Summarization cancelled');
+                this.plugin.updateSummarizationStatus('Summarization cancelled');
                 new Notice('Summarization cancelled');
                 break;
             }
             
             const notePath = notePaths[i];
-            this.plugin.summarizationCurrent = i + 1;
-            this.plugin.summarizationProgressText = `Summarizing note ${i + 1}/${notePaths.length}: ${notePath}`;
+            this.plugin.log(`Summarizing note ${i + 1}/${notePaths.length}: ${notePath}`);
+            this.plugin.updateSummarizationStatus(`Summarizing note ${i + 1}/${notePaths.length}...`);
             
             try {
                 // Get the note file
@@ -130,7 +166,7 @@ export class SummarizationService {
                     
                     // Show progress notification every 5 notes
                     if (i % 5 === 0 || i === notePaths.length - 1) {
-                        new Notice(`Summarization progress: ${this.plugin.summarizationCurrent}/${this.plugin.summarizationTotal} notes`);
+                        new Notice(`Summarization progress: ${i + 1}/${notePaths.length} notes`);
                     }
                 } else {
                     this.plugin.log(`File not found: ${notePath}`);
@@ -143,8 +179,7 @@ export class SummarizationService {
         
         // Summarization complete
         if (!this.plugin.cancelSummarization) {
-            this.plugin.summarizationProgressText = 'Summarization complete';
-            new Notice(`Summarization complete. Processed ${this.plugin.summarizationCurrent} notes.`);
+            new Notice(`Summarization complete. Processed ${notePaths.length} notes.`);
         }
     }
 
@@ -153,19 +188,22 @@ export class SummarizationService {
      */
     async generateNoteSummary(content: string, notePath: string, retryCount: number = 0): Promise<string> {
         if (!this.plugin.settings.openaiApiKey) {
-            throw new Error('OpenAI API key is not set');
+            const errorMsg = 'OpenAI API key is not set';
+            this.plugin.log(errorMsg);
+            new Notice(errorMsg);
+            throw new Error(errorMsg);
         }
         
-        // Create an abort controller for this request
-        const controller = new AbortController();
-        this.activeRequests.push(controller);
+        // Track that we're starting a request
+        this.activeRequests += 1;
         
         try {
             this.plugin.log(`Generating summary for ${notePath}${retryCount > 0 ? ` (retry ${retryCount}/${this.MAX_RETRIES})` : ''}`);
             
             // Check if the operation has been cancelled
             if (this.plugin.cancelSummarization) {
-                throw new Error('Summary generation cancelled');
+                this.plugin.log('Summary generation cancelled by user');
+                throw new Error('Summary generation was cancelled');
             }
             
             // Create the messages for the API request
@@ -180,33 +218,74 @@ export class SummarizationService {
                 }
             ];
             
-            // Make the API request with the abort signal
-            const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            // Generate a unique request ID for logging
+            const requestId = Math.random().toString(36).substring(2, 10);
+            
+            // Create the request body
+            const requestBody = {
+                model: this.plugin.settings.openaiModelName,
+                messages: messages,
+                temperature: 0.7,
+                max_tokens: 1000
+            };
+            
+            // Log the request details in debug mode
+            this.plugin.log(`[${requestId}] OpenAI API Request:`, {
+                method: 'POST',
+                url: 'https://api.openai.com/chat/completions',
+                headers: {
+                    'Authorization': 'Bearer REDACTED',
+                    'Content-Type': 'application/json'
+                },
+                body: requestBody
+            });
+            
+            // Make the API request using Obsidian's requestUrl
+            const startTime = Date.now();
+            const response = await requestUrl({
+                url: 'https://api.openai.com/chat/completions',
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${this.plugin.settings.openaiApiKey}`,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    model: this.plugin.settings.openaiModelName,
-                    messages: messages,
-                    temperature: 0.7,
-                    max_tokens: 1000
-                }),
-                signal: controller.signal
+                body: JSON.stringify(requestBody)
+            });
+            const endTime = Date.now();
+            
+            // Log the response details in debug mode
+            this.plugin.log(`[${requestId}] OpenAI API Response (${endTime - startTime}ms):`, {
+                status: response.status,
+                statusText: response.status.toString(),
+                headers: response.headers,
+                data: response.json
             });
             
-            // Remove this controller from active list
-            this.activeRequests = this.activeRequests.filter(c => c !== controller);
+            // Decrement active request count
+            this.activeRequests -= 1;
             
-            // Handle rate limiting (429)
-            if (response.status === 429) {
-                if (retryCount >= this.MAX_RETRIES) {
-                    throw new Error(`OpenAI API rate limit exceeded. Maximum retries (${this.MAX_RETRIES}) reached.`);
-                }
+            // Handle errors for all non-200 responses
+            if (response.status !== 200) {
+                // Log detailed error information for debugging
+                this.plugin.log(`[${requestId}] OpenAI API Error Response Details:`, {
+                    status: response.status,
+                    statusText: response.status.toString(),
+                    body: response.text,
+                    json: response.json,
+                    url: 'https://api.openai.com/chat/completions'
+                });
+                
+                // Handle rate limiting (429)
+                if (response.status === 429) {
+                    if (retryCount >= this.MAX_RETRIES) {
+                        const errorMsg = `OpenAI API rate limit exceeded. Maximum retries (${this.MAX_RETRIES}) reached.`;
+                        this.plugin.log(errorMsg);
+                        new Notice(errorMsg);
+                        throw new Error(errorMsg);
+                    }
                 
                 // Get retry-after header if available, otherwise use exponential backoff
-                const retryAfter = response.headers.get('retry-after');
+                const retryAfter = response.headers && response.headers['retry-after'];
                 let waitTime = this.BASE_DELAY * Math.pow(2, retryCount); // Exponential backoff
                 
                 if (retryAfter) {
@@ -227,7 +306,10 @@ export class SummarizationService {
             // Handle server errors (5xx)
             if (response.status >= 500 && response.status < 600) {
                 if (retryCount >= this.MAX_RETRIES) {
-                    throw new Error(`OpenAI API server error (${response.status}). Maximum retries (${this.MAX_RETRIES}) reached.`);
+                    const errorMsg = `OpenAI API server error (${response.status}). Maximum retries (${this.MAX_RETRIES}) reached.`;
+                    this.plugin.log(errorMsg);
+                    new Notice(errorMsg);
+                    throw new Error(errorMsg);
                 }
                 
                 const waitTime = this.BASE_DELAY * Math.pow(1.5, retryCount);
@@ -238,14 +320,17 @@ export class SummarizationService {
                 return this.generateNoteSummary(content, notePath, retryCount + 1);
             }
             
-            // Handle other errors
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(`OpenAI API error (${response.status}): ${errorData.error?.message || JSON.stringify(errorData)}`);
+                // Handle other errors if not rate limiting
+                const errorData = response.json;
+                const errorMsg = `OpenAI API error (${response.status}): ${errorData.error?.message || JSON.stringify(errorData)}`;
+                this.plugin.log(errorMsg);
+                new Notice(errorMsg);
+                throw new Error(errorMsg);
             }
             
-            const result = await response.json();
-            const summary = result.choices[0].message.content;
+            // Parse the OpenAI API response
+            const result = response.json;
+            const summary = result?.choices?.[0]?.message?.content || 'Error: Unable to parse summary from API response';
             
             // Add metadata to the summary
             const metadata = this.generateSummaryMetadata(notePath);
@@ -253,12 +338,13 @@ export class SummarizationService {
             
             return fullSummary;
         } catch (error) {
-            // Remove this controller from active list
-            this.activeRequests = this.activeRequests.filter(c => c !== controller);
+            // Decrement active request count
+            this.activeRequests -= 1;
             
-            // Handle abort errors
-            if (error.name === 'AbortError') {
+            // Check for cancellation
+            if (this.plugin.cancelSummarization) {
                 this.plugin.log(`Summary generation for ${notePath} was cancelled`);
+                this.plugin.log('Summary generation was cancelled');
                 throw new Error('Summary generation was cancelled');
             }
             
@@ -273,6 +359,8 @@ export class SummarizationService {
             }
             
             this.plugin.log('Error generating summary:', error);
+            this.plugin.log(`Error writing summary for ${notePath}:`, error);
+            new Notice(`Error writing summary: ${error.message || 'Unknown error'}`);
             throw error;
         }
     }
@@ -329,33 +417,35 @@ export class SummarizationService {
         
         this.plugin.log('Fetching available OpenAI models...');
         
-        // Create an abort controller for this request
-        const controller = new AbortController();
-        this.activeRequests.push(controller);
+        // Track that we're starting a request
+        this.activeRequests += 1;
         
         let retryCount = 0;
         let lastError: Error | null = null;
         
         while (retryCount <= this.MAX_RETRIES) {
             try {
-                // Make a request to the OpenAI API to get available models with the abort signal
-                const response = await fetch('https://api.openai.com/v1/models', {
+                // Make a request to the OpenAI API to get available models
+                const response = await requestUrl({
+                    url: 'https://api.openai.com/v1/models',
                     method: 'GET',
                     headers: {
                         'Authorization': `Bearer ${this.plugin.settings.openaiApiKey}`,
                         'Content-Type': 'application/json'
-                    },
-                    signal: controller.signal
+                    }
                 });
                 
-                // Remove this controller from active list after request completes
-                this.activeRequests = this.activeRequests.filter(c => c !== controller);
+                // Decrement active request count
+                this.activeRequests -= 1;
                 
-                if (!response.ok) {
+                if (response.status !== 200) {
                     // For authentication errors (401/403), don't retry
                     if (response.status === 401 || response.status === 403) {
                         this.plugin.log(`Authentication error: ${response.status} - Invalid API key`);
-                        throw new Error(`Authentication failed. Please check your API key. (Status: ${response.status})`);
+                        const errorMsg = `Authentication failed. Please check your API key. (Status: ${response.status})`;
+                        this.plugin.log(errorMsg);
+                        new Notice(errorMsg);
+                        return [];
                     }
                     
                     // For rate limit errors (429), retry with backoff
@@ -363,7 +453,7 @@ export class SummarizationService {
                         lastError = new Error(`Rate limited by OpenAI API. (Status: ${response.status})`);
                         
                         // Get retry-after header if available
-                        const retryAfter = response.headers.get('retry-after');
+                        const retryAfter = response.headers && response.headers['retry-after'];
                         let waitTime = Math.pow(2, retryCount) * 1000; // Exponential backoff: 1s, 2s, 4s...
                         
                         if (retryAfter) {
@@ -391,10 +481,13 @@ export class SummarizationService {
                         continue;
                     }
                     
-                    throw new Error(`API request failed with status ${response.status}`);
+                    const errorMsg = `API request failed with status ${response.status}`;
+                    this.plugin.log(errorMsg);
+                    new Notice(errorMsg);
+                    return [];
                 }
             
-                const data = await response.json();
+                const data = response.json;
                 const allModels = data.data;
                 
                 this.plugin.log(`Received ${allModels.length} models from OpenAI API`);
@@ -418,13 +511,14 @@ export class SummarizationService {
                 
                 return chatModels;
             } catch (error) {
-                // Remove this controller from active list if error
-                this.activeRequests = this.activeRequests.filter(c => c !== controller);
+                // Decrement active request count
+                this.activeRequests -= 1;
                 
-                // Handle abort errors
-                if (error.name === 'AbortError') {
+                // Check if operation was cancelled
+                if (this.plugin.cancelSummarization) {
                     this.plugin.log('Model fetching was cancelled');
-                    throw error;
+                    this.plugin.log(`Request was cancelled by user`);
+                    return []; // Return empty array instead of string to match return type
                 }
                 
                 // Save the error for potential final retry failure
@@ -509,7 +603,7 @@ export class SummarizationService {
     /**
      * Ensure summary output folder exists
      */
-    async ensureSummaryFolder(): Promise<TFolder> {
+    async ensureSummaryFolder(): Promise<TFolder | null> {
         const folderPath = normalizePath(this.plugin.settings.summaryOutputFolder);
         let folder = this.plugin.app.vault.getAbstractFileByPath(folderPath);
         
@@ -518,7 +612,10 @@ export class SummarizationService {
             this.plugin.log(`Creating summary folder: ${folderPath}`);
             folder = await this.plugin.app.vault.createFolder(folderPath);
         } else if (!(folder instanceof TFolder)) {
-            throw new Error(`${folderPath} exists but is not a folder`);
+            const errorMsg = `${folderPath} exists but is not a folder`;
+            this.plugin.log(errorMsg);
+            new Notice(errorMsg);
+            return null;
         }
         
         return folder as TFolder;
@@ -545,9 +642,26 @@ export class SummarizationService {
         // Check each file in the folder
         for (const file of folder.children) {
             if (file instanceof TFile && file.extension === 'md') {
+                // If forcing all summaries, check the date if we have a start date
                 if (forceAll) {
-                    // If force all is true, add all md files
-                    notesNeedingSummarization.push(file.path);
+                    const summaryStartDate = this.plugin.settings.summaryStartDate;
+                    
+                    if (summaryStartDate) {
+                        // Extract date from filename (assuming format like 2023-01-01.md)
+                        const fileDate = file.name.replace('.md', '').match(/^(\d{4}-\d{2}-\d{2})/);
+                        if (fileDate) {
+                            // Compare with the start date
+                            if (fileDate[1] >= summaryStartDate) {
+                                notesNeedingSummarization.push(file.path);
+                            }
+                        } else {
+                            // If no date in filename, include it anyway
+                            notesNeedingSummarization.push(file.path);
+                        }
+                    } else {
+                        // If no start date, include all files
+                        notesNeedingSummarization.push(file.path);
+                    }
                 } else {
                     // Otherwise, check if the hash has changed
                     const content = await this.plugin.app.vault.read(file);
@@ -613,7 +727,8 @@ export class SummarizationService {
             );
         } catch (error) {
             this.plugin.log('Error writing hash file:', error);
-            throw error;
+            new Notice(`Error writing file: ${error.message || 'Unknown error'}`);
+            // Continue without throwing
         }
     }
 }

@@ -14,22 +14,26 @@ export interface LimitlessPluginSettings {
 	openaiModelName: string;
 	summaryOutputFolder: string;
 	summarizationPrompt: string;
+	lastSummaryTimestamp: string;
+	summaryStartDate: string;
 }
 
 export const DEFAULT_SETTINGS: LimitlessPluginSettings = {
 	apiUrl: 'https://api.limitless.ai/v1',
 	apiKey: '',
-	outputFolder: 'Limitless',
+	outputFolder: 'Limitless/Logs',
 	syncIntervalMinutes: 60,
 	lastSyncTimestamp: '',
 	debugMode: false,
-	forceOverwrite: false,
+	forceOverwrite: true,
 	ascendingOrder: false,
 	startDate: new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0],
 	useSystemTimezone: true,
 	summarizationEnabled: false,
 	openaiApiKey: '',
-	openaiModelName: 'gpt-4',
-	summaryOutputFolder: 'Summaries',
-	summarizationPrompt: 'Create a detailed summary of this daily note, highlighting key events, insights, and activities. Format the summary in markdown with clear sections.'
+	openaiModelName: 'gpt-4o-latest',
+	summaryOutputFolder: 'Limitless/Summaries',
+	summarizationPrompt: 'Create a detailed summary of this daily note, highlighting key events, insights, and activities. Format the summary in markdown with clear sections.',
+	lastSummaryTimestamp: '',
+	summaryStartDate: new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0]
 };
